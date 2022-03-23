@@ -15,7 +15,9 @@
     "d3-selection-multi": "^1"
   },
   "devDependencies": {
-    "@types/d3": "^7.1.0",
-    "react": ">=16.8"
+    "@types/d3": "^7.1.0"
+  },
+  "peerDependencies": {
+    "react": ">=17"
   }
 }
