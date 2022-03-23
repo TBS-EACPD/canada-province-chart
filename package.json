@@ -1,0 +1,21 @@
+{
+  "name": "canada-province-chart",
+  "version": "0.0.1",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "d3-color": "^2.0.0",
+    "d3-selection": "^1",
+    "d3-selection-multi": "^1"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.1.0",
+    "react": ">=16.8"
+  }
+}
