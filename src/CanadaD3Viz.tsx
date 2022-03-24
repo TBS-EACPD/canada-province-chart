@@ -41,20 +41,20 @@ const ordering = Object.fromEntries(
 
 const getProvinceElementId = provCode => `#ca-${provCode}`;
 
-export interface CanadaVizDatum {
+export interface CanadaD3VizDatum {
   provCode: ProvCode;
   value: number;
 }
 
-export type CanadaVizData<RawDatum extends CanadaVizDatum> = Array<RawDatum>;
+export type CanadaD3VizData<RawDatum extends CanadaD3VizDatum> = Array<RawDatum>;
 
-export interface GraphConfig<RawDatum extends CanadaVizDatum> {
-  colorScale: (d: RawDatum) => string;
-  inactiveColor: string;
-  htmlForLabel: (datum: RawDatum) => string;
-  data: CanadaVizData<RawDatum>;
+export interface GraphConfig<RawDatum extends CanadaD3VizDatum> {
+  colorScale: (d: RawDatum|undefined, provCode: ProvCode) => string;
+  htmlForLabel: (datum: RawDatum|undefined, provCode: ProvCode) => string|null;
+  data: CanadaD3VizData<RawDatum>;
   onMouseLeave?: () => void;
-  onMouseEnter?: (datum: RawDatum) => void;
+  onMouseEnter?: (datum: RawDatum| undefined, provCode: ProvCode) => void;
+  onClick?: (datum: RawDatum|undefined, provCode: ProvCode) => void;
   lang: "en" | "fr"; //not for labels, but there are lang-specific portions in the SVG
 }
 
@@ -62,17 +62,12 @@ const xScaleFactor = 1396;
 const yScaleFactor = 1346;
 const maxHeight = 700;
 
-export function CanadaViz<RawDatum extends CanadaVizDatum>(
+export function CanadaD3Viz<RawDatum extends CanadaD3VizDatum>(
   containerEl: HTMLElement,
   options: GraphConfig<RawDatum>
 ) {
   const d3Container = select(containerEl);
   options = { ...options };
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const onMouseEnter = options.onMouseEnter || function () {};
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const onMouseLeave = options.onMouseLeave || function () {};
 
   d3Container.classed("position-relative", true);
   d3Container.append("div").classed("__svg__", true);
@@ -88,7 +83,7 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
   const padding = (outsideWidth - scale * xScaleFactor) / 2;
 
   const svg = svgSelection;
-  const { data, colorScale, inactiveColor, htmlForLabel, lang } = options;
+  const { data, colorScale, htmlForLabel, lang, onClick, onMouseEnter, onMouseLeave } = options;
 
   const dataByProvCode = Object.fromEntries(
     options.data.map(d => [d.provCode, d])
@@ -129,20 +124,20 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
         .styles(provCode => ({
           "stroke-width": "2px",
           stroke: darkenColor(
-            colorScale(dataByProvCode[provCode]),
+            colorScale(dataByProvCode[provCode], provCode),
             BORDER_COLOR_DARK_FACTOR
           ),
         }));
     }
     previousEventTargetProvCode = false;
-    onMouseLeave();
+    onMouseLeave?.();
   };
-  const dispatch_mouseEnter = function (provCode) {
+  const dispatch_mouseEnter = function (provCode: ProvCode) {
     if (previousEventTargetProvCode) {
       svg.select(getProvinceElementId(previousEventTargetProvCode)).styles({
         "stroke-width": "2px",
         stroke: darkenColor(
-          colorScale(dataByProvCode[provCode]),
+          colorScale(dataByProvCode[provCode], provCode),
           BORDER_COLOR_DARK_FACTOR
         ),
       });
@@ -152,20 +147,17 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
       svg.select(getProvinceElementId(provCode)).styles({
         "stroke-width":
           provCode === "abroad" || provCode === "na" ? "8px" : "15px",
-        stroke: darkenColor(colorScale(dataByProvCode[provCode]), 0.5),
+        stroke: darkenColor(colorScale(dataByProvCode[provCode], provCode), 0.5),
       });
 
-      onMouseEnter(provCode);
+      onMouseEnter?.(dataByProvCode[provCode],provCode);
     }
   };
 
   // Set province colours, attach event dispatchers
-  const provinceIsActive = provCode =>
+  const provinceIsActive = (provCode: ProvCode) =>
     dataByProvCode[provCode]?.value !== undefined;
-  const getColor = provCode =>
-    provinceIsActive(provCode)
-      ? colorScale(dataByProvCode[provCode])
-      : inactiveColor;
+  const getColor = (provCode: ProvCode) => colorScale(dataByProvCode[provCode], provCode)
 
   svg
     .selectAll(".province")
@@ -184,14 +176,18 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
     .on("mouseenter", dispatch_mouseEnter)
     .on("focus", dispatch_mouseEnter)
     .on("mouseleave", dispatch_mouseLeave)
-    .on("blur", dispatch_mouseLeave);
+    .on("blur", dispatch_mouseLeave)
+    .on("click", (provCode: ProvCode) => {
+      onClick?.(dataByProvCode[provCode],provCode);
+    });
 
   // Add labels to provinces with data, attach event dispatchers
-  const provincesToLabel = data.map(({ provCode }) => provCode);
-  const forbiddenCodes = dataHasNcrBrokenOut
+  const provincesToLabel = Object.keys(ordering)
+  const provincesWithData = data.map(({ provCode }) => provCode);
+  const excludedCodes = dataHasNcrBrokenOut
     ? ["on", "qc"]
     : ["onlessncr", "qclessncr", "ncr"];
-  if (provincesToLabel.some(code => forbiddenCodes.includes(code))) {
+  if (provincesWithData.some(code => excludedCodes.includes(code))) {
     if (dataHasNcrBrokenOut) {
       throw "If data does not offer capital region data, it must only use 'on' and 'qc' codes. Otherwise, it can use 'ncr', 'onlessncr' and 'qclessncr' codes.";
     }
@@ -206,7 +202,7 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
     .attr("class", "label")
     .on("mouseenter", dispatch_mouseEnter)
     .on("mouseleave", dispatch_mouseLeave)
-    .each(function (provCode, i) {
+    .each(function(provCode: ProvCode, i:number) {
       const label = svg.selectAll("g.label").filter(function () {
         return select(this).attr("id") === `ca-${provCode}--label`;
       });
@@ -217,21 +213,29 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
         .replace(",", " ")
         .split(" ");
 
-      select(this)
-        .styles({
-          left: `${padding + scale * coords[0]}px`,
-          top: `${scale * coords[1]}px`,
-          padding: "5px",
-          position: "absolute",
-          "border-radius": "5px",
-          "text-align": "center",
-          "font-size": `${scale * 22}px`,
-          "background-color": LABEL_BORDER_COLOR,
-        })
-        .html(htmlForLabel(dataByProvCode[provCode]))
-        .attr("tabindex", 0)
-        .on("focus", dispatch_mouseEnter)
-        .on("blur", dispatch_mouseLeave);
+      const potentiallyDontNeedLabels = optionalProvinces.concat(excludedCodes);
+      if(potentiallyDontNeedLabels.includes(provCode) && !provincesWithData.includes(provCode)){
+        return;
+      }
+
+      const markup = htmlForLabel(dataByProvCode[provCode], provCode);
+      if(markup){
+        select(this)
+          .styles({
+            left: `${padding + scale * coords[0]}px`,
+            top: `${scale * coords[1]}px`,
+            padding: "5px",
+            position: "absolute",
+            "border-radius": "5px",
+            "text-align": "center",
+            "font-size": `${scale * 22}px`,
+            "background-color": LABEL_BORDER_COLOR,
+          })
+          .html(markup)
+          .attr("tabindex", 0)
+          .on("focus", dispatch_mouseEnter)
+          .on("blur", dispatch_mouseLeave);
+      }
     });
 
   // Hide optional map components based on data availability
@@ -247,15 +251,16 @@ export function CanadaViz<RawDatum extends CanadaVizDatum>(
       }
     });
 
-  const optionalProvinces = ["abroad", "na", "ncr"];
   hideOptionalComponents(
     optionalProvinces,
     provCode => `.province${getProvinceElementId(provCode)}`
   );
 
-  const provincesWithOptionalMarkers = ["pe", "ns", "nb", "ncr"];
   hideOptionalComponents(
     provincesWithOptionalMarkers,
     provCode => `path${getProvinceElementId(provCode)}--marker`
   );
 }
+
+const provincesWithOptionalMarkers = ["pe", "ns", "nb", "ncr"];
+const optionalProvinces = ["abroad", "na", "ncr"];
